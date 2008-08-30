@@ -1,0 +1,249 @@
+#!/bin/bash
+
+IPTABLES=$1
+MYNAME=$2
+
+######################################################################
+#
+# rc.firewall
+#
+#   version 1.13 (2007/11/03) by John Wiegley <admin@johnwiegley.com>
+#
+# This script is based on a similar firewalling script I wrote for ipfw,
+# but has been changed to utilize iptables.  Also, it is customized
+# solely for running on johnwiegley.com, and does not contain any
+# configuration options.
+#
+# Revision history:
+# 1.01: Added port knocking for ssh access.
+# 1.02: Lock out ssh port scanners for 5 minutes.
+# 1.03: Remove port scanners from lockout after 5 mins good behavior.
+# 1.04: Flush the nat table as well as the filter (default) table.
+# 1.05: Use hashlimit for connection rate limiting instead of recent.
+# 1.06: Extended portscan lockout to an entire day.
+# 1.07: Removed an excessive rule.
+# 1.08: Commented out rate limiting of Apache.
+# 1.09: Increased SSH availability to one day.
+# 1.10: Drop ICMP redirect packets.
+# 1.11: Decrease SYN flood rate limit to 60 conns per second.
+# 1.12: Don't filter based on the connection source port.
+# 1.13: Opened up the IMAP/S port 993.
+#
+######################################################################
+
+$IPTABLES -F
+$IPTABLES -t nat -F
+$IPTABLES -X
+
+$IPTABLES -t nat -P PREROUTING  ACCEPT
+$IPTABLES -t nat -P POSTROUTING ACCEPT
+$IPTABLES -t nat -P OUTPUT      ACCEPT
+
+$IPTABLES -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+
+$IPTABLES -P INPUT   ACCEPT
+$IPTABLES -P FORWARD ACCEPT
+$IPTABLES -P OUTPUT  ACCEPT
+
+if [[ $2 == flush ]]; then
+    exit 0
+fi
+
+######################################################################
+
+$IPTABLES -P INPUT   DROP
+$IPTABLES -P FORWARD DROP
+$IPTABLES -P OUTPUT  ACCEPT
+
+# Drop invalid packets immediately
+$IPTABLES -A INPUT   -m state --state INVALID -j DROP
+$IPTABLES -A FORWARD -m state --state INVALID -j DROP
+$IPTABLES -A OUTPUT  -m state --state INVALID -j DROP
+
+# Allow trusted interfaces
+$IPTABLES -A INPUT   -i lo   -j ACCEPT 
+$IPTABLES -A INPUT   -i tun+ -j ACCEPT 
+$IPTABLES -A FORWARD -i tun+ -j ACCEPT
+$IPTABLES -A FORWARD -o tun+ -j ACCEPT
+
+# Drop suspicious IP packets
+#$IPTABLES -A INPUT -m ipv4options --rr   -j DROP
+#$IPTABLES -A INPUT -m ipv4options --ts   -j DROP
+#$IPTABLES -A INPUT -m ipv4options --lsrr -j DROP
+#$IPTABLES -A INPUT -m ipv4options --ssrr -j DROP
+
+# Drop bogus TCP packets
+$IPTABLES -A INPUT -p tcp -m tcp --tcp-flags SYN,FIN SYN,FIN -j DROP
+$IPTABLES -A INPUT -p tcp -m tcp --tcp-flags SYN,RST SYN,RST -j DROP
+
+# Allow multicast DNS packets.  jww (2007-09-09): This may be needed at
+# Server Axis for determining server presence.  I have to ask them.
+$IPTABLES -A INPUT -d 224.0.0.251 -p udp -m udp --dport mdns -j ACCEPT 
+
+# Reject packets from RFC1918 class networks (i.e., spoofed)
+$IPTABLES -A INPUT -i eth0 -s 10.0.0.0/8 -j DROP
+$IPTABLES -A INPUT -s 192.168.0.0/16   -j DROP
+$IPTABLES -A INPUT -s 169.254.0.0/16   -j DROP
+if [[ $MYNAME == "johnwiegley.com" ]]; then
+    $IPTABLES -A INPUT -s 172.16.0.0/12    -j DROP
+fi
+$IPTABLES -A INPUT -s 127.0.0.0/8      -j DROP
+
+$IPTABLES -A INPUT -s 224.0.0.0/4      -j DROP
+$IPTABLES -A INPUT -d 224.0.0.0/4      -j DROP
+$IPTABLES -A INPUT -s 240.0.0.0/5      -j DROP
+$IPTABLES -A INPUT -d 240.0.0.0/5      -j DROP
+$IPTABLES -A INPUT -s 0.0.0.0/8        -j DROP
+$IPTABLES -A INPUT -d 0.0.0.0/8        -j DROP
+$IPTABLES -A INPUT -d 239.255.255.0/24 -j DROP
+$IPTABLES -A INPUT -d 255.255.255.255  -j DROP
+
+# Reject packets spoofed to appear as if from us
+if [[ $MYNAME == "johnwiegley.com" ]]; then
+    $IPTABLES -A INPUT -s 208.70.150.153   -j DROP
+    $IPTABLES -A INPUT -s 208.70.150.154   -j DROP
+    $IPTABLES -A INPUT -s 208.70.150.155   -j DROP
+    $IPTABLES -A INPUT -s 208.70.150.156   -j DROP
+    $IPTABLES -A INPUT -s 208.70.150.157   -j DROP
+fi
+
+# Allow most ICMP packets to be received (so people can check our
+# presence), but restrict the flow to avoid ping flood attacks
+$IPTABLES -A INPUT -p icmp -m icmp --icmp-type address-mask-request -j DROP
+$IPTABLES -A INPUT -p icmp -m icmp --icmp-type timestamp-request -j DROP
+$IPTABLES -A INPUT -p icmp -m icmp --icmp-type redirect -j DROP
+$IPTABLES -A INPUT -p icmp -m icmp -m limit --limit 1/second -j ACCEPT 
+
+# Anyone trying to portscan us at port 139 is locked out for 1 day.
+$IPTABLES -A INPUT   -m recent --name portscan --rcheck --seconds 86400 -j DROP
+$IPTABLES -A FORWARD -m recent --name portscan --rcheck --seconds 86400 -j DROP
+$IPTABLES -A INPUT   -m recent --name portscan --remove
+
+$IPTABLES -A INPUT   -p tcp -m tcp -i eth0 --dport 139 \
+    -m recent --name portscan --set -j LOG --log-level 4 --log-prefix "Portscan:"
+$IPTABLES -A INPUT   -p tcp -m tcp -i eth0 --dport 139 \
+    -m recent --name portscan --set -j DROP
+$IPTABLES -A FORWARD -p tcp -m tcp -i eth0 --dport 139 \
+    -m recent --name portscan --set -j LOG --log-level 4 --log-prefix "Portscan:"
+$IPTABLES -A FORWARD -p tcp -m tcp -i eth0 --dport 139 \
+    -m recent --name portscan --set -j DROP
+
+# jww (2007-09-09): I don't think this can be done with iptables alone,
+# so I satisfy myself with limiting RST packets instead.  Intention:
+# Delay RST packets by 0.5 seconds to avoid SMURF attacks, by given the
+# next real data packet in the sequence a better chance to arrive first.
+$IPTABLES -A INPUT -p tcp -m tcp --tcp-flags RST RST \
+    -m limit --limit 2/second --limit-burst 2 -j ACCEPT
+
+# If we are using IPsec, these rules allow such packets through
+#$IPTABLES -A INPUT -p ah -j ACCEPT 
+#$IPTABLES -A INPUT -p esp -j ACCEPT 
+
+# Allow established and related packets
+$IPTABLES -A INPUT -m state --state RELATED,ESTABLISHED -j ACCEPT 
+
+# Discard any left over fragments
+$IPTABLES -A INPUT -f -j DROP
+
+# Protect against SYN floods by rate limiting the number of new
+# connections from any host to 60 per second.  This does *not* do rate
+# limiting overall, because then someone could easily shut us down by
+# saturating the limit.
+$IPTABLES -A INPUT -m state --state NEW -p tcp -m tcp --syn \
+    -m recent --name synflood --update --seconds 1 --hitcount 60 -j DROP
+
+# Reply to unknown "NEW" SYN/ACK packets with a RESET, so we can't be
+# used as a middle-man for Sequence Number Prediction based spoof
+# attacks.
+$IPTABLES -A INPUT -m state --state NEW -p tcp -m tcp \
+    --tcp-flags SYN,ACK SYN,ACK -j REJECT --reject-with tcp-reset
+
+# Log and drop NEW packets which don't have the SYN bit set
+$IPTABLES -A INPUT -m state --state NEW -p tcp -m tcp ! --syn \
+    -j LOG --log-level 4 --log-prefix "New !SYN:"
+$IPTABLES -A INPUT -m state --state NEW -p tcp -m tcp ! --syn -j DROP
+
+# If any packets reach this point that have the ACK bit sent (but not
+# SYN), respond with a TCP reset
+$IPTABLES -A INPUT -p tcp -m tcp --tcp-flags ACK ACK \
+    -j REJECT --reject-with tcp-reset
+
+# DNS
+$IPTABLES -A INPUT -m state --state NEW -p udp -m udp --dport domain -j ACCEPT 
+$IPTABLES -A INPUT -m state --state NEW -p tcp -m tcp --dport domain -j ACCEPT 
+
+# OpenVPN
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p udp -m udp --dport 1194 -j ACCEPT 
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport 1195 -j ACCEPT 
+
+# FTP, but allow only 5 open connections per host, and 5 new connections
+# per minute from any given host (to block brute force scans)
+#$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+#    --dport ftp -m connlimit --connlimit-above 5 -j DROP
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport ftp -m hashlimit \
+    --hashlimit 5/min --hashlimit-mode srcip --hashlimit-name ftpusers -j ACCEPT 
+
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport rsync -m hashlimit \
+    --hashlimit 5/min --hashlimit-mode srcip --hashlimit-name ftpusers -j ACCEPT 
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p udp -m udp --dport rsync -m hashlimit \
+    --hashlimit 5/min --hashlimit-mode srcip --hashlimit-name ftpusers -j ACCEPT 
+
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport git -m hashlimit \
+    --hashlimit 5/min --hashlimit-mode srcip --hashlimit-name gitusers -j ACCEPT 
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p udp -m udp --dport git -m hashlimit \
+    --hashlimit 5/min --hashlimit-mode srcip --hashlimit-name gitusers -j ACCEPT 
+
+# SSH, but allow only 2 new connections per minute from any given host
+# (to block brute force scans), and only after knocking first at port
+# 1908.
+#$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+#    --dport ssh -m recent --rcheck --seconds 86400 --name sshusers -j ACCEPT 
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+    --dport ssh -j ACCEPT 
+
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+    --dport 1907 -m recent --name sshusers --remove \
+    -j REJECT --reject-with icmp-admin-prohibited
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+    --dport 1908 -m recent --name sshusers --set \
+    -j REJECT --reject-with icmp-admin-prohibited
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+    --dport 1909 -m recent --name sshusers --remove \
+    -j REJECT --reject-with icmp-admin-prohibited
+
+# Web, but allow only 10 open connections per host, and 40 new
+# connections per minute from any given host
+#$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+#    -m multiport --dports http,https -m connlimit --connlimit-above 10 -j DROP
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp \
+    -m multiport --dports http,https -j ACCEPT
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport 8080 -j ACCEPT
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport 8007 -j ACCEPT
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport 9090 -j ACCEPT
+$IPTABLES -A INPUT -m state --state NEW -i eth0 -p tcp -m tcp --dport 5050 -j ACCEPT
+# -m hashlimit --hashlimit 40/min --hashlimit-mode srcip --hashlimit-name webusers -j ACCEPT
+
+# if a connection comes in to .157:80, redirect it to local port 8080
+$IPTABLES -t nat -A PREROUTING -s 208.70.150.157 -p tcp -m tcp --dport 80 \
+    -j REDIRECT --to-ports 8080
+
+# SMTP, but allow only 5 open connections per host, and 10 new connections per
+# minute from any given host.  And only listen at mail.johnwiegley.com.
+DEST=""
+if [[ $MYNAME == "johnwiegley.com" ]]; then
+    DEST="-d 208.70.150.154"
+fi
+#$IPTABLES -A INPUT -m state --state NEW $DEST -p tcp -m tcp \
+#    -m multiport --dports smtp,submission -m connlimit --connlimit-above 5 -j DROP
+$IPTABLES -A INPUT -m state --state NEW $DEST -p tcp -m tcp \
+    -m multiport --dports smtp,submission,imaps -m hashlimit \
+    --hashlimit 10/min --hashlimit-mode srcip --hashlimit-name mailusers -j ACCEPT
+
+# Reject all others by letting them know that such communication with the host
+# is forbidden
+$IPTABLES -A INPUT -j REJECT --reject-with icmp-admin-prohibited 
+
+echo If you can exit me now, things are OK...
+sleep 120
+
+exec $0 $IPTABLES flush
