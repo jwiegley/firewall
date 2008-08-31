@@ -4,6 +4,9 @@
 # Firewall
 ##
 
+#fw_script=/etc/rc.firewall
+fw_script=/Users/johnw/src/firewall/rc.firewall
+
 . /etc/rc.common
 
 StartService ()
@@ -12,29 +15,31 @@ StartService ()
   then
     ConsoleMessage "Starting Firewall"
 
-    sleep 60
+    sleep 10
 
     gwmac=$(arp $(netstat -f inet -nr | grep ^default | awk '{print $2}') | \
         perl -ne 'print $1, "\n" if / at (.+?) on /;')
-    
+
     case "$gwmac" in
-    0:15:5:c:59:a0)
-    	sh /etc/rc.firewall --blackhole \
-    	    en1@@192.168.0.0/24 en1\{1450Kbits/s,950Kbits/s\} \
-	    en0@@192.168.2.0/24 en2@@10.37.129.0/24 en3@@10.211.55.0/24 \
-    	    tap0\{1450Kbits/s,950Kbits/s\}@@10.9.19.0/24
-    
+    0:1c:10:bc:b4:46)
+    	sh $fw_script --blackhole \
+    	    en1+mac::192.168.2.0/24 en1\{1450Kbits/s,950Kbits/s\} \
+	    vmnet8+win::192.168.36.0/24 \
+    	    tap0\{1400Kbits/s,900Kbits/s\}+win::10.9.19.0/24 \
+    	    tap0\{1400Kbits/s,900Kbits/s\}+win::172.24.8.0/24
+
     	ConsoleMessage "Home Firewall started for Hermes"
-    
+
         echo "Home" > /var/run/firewall-type ;;
     *)
-    	sh /etc/rc.firewall --blackhole en1\{256Kbits/s,128Kbits/s\} \
-	    en2@@10.37.129.0/24 en3@@10.211.55.0/24 \
-    	    tun0@@10.8.0.0/24 tun0@@192.168.0.0/24 tun0 \
-    	    tap0\{256Kbits/s,128Kbits/s\}@@10.9.19.0/24
-    
+    	sh $fw_script --blackhole en1\{512Kbits/s,256Kbits/s\} \
+	    vmnet8@@192.168.36.0/24 \
+    	    tun0@@10.8.0.0/24 tun0 \
+    	    tap0\{500Kbits/s,250Kbits/s\}@@10.9.19.0/24 \
+    	    tap0\{500Kbits/s,250Kbits/s\}@@172.24.8.0/24
+
     	ConsoleMessage "Remote Firewall started for Hermes"
-    
+
         echo "Automatic" > /var/run/firewall-type ;;
     esac
   fi
