@@ -313,7 +313,7 @@ declare -a all_intf
 
 intf_count=0
 
-function add_interface() 
+function add_interface()
 {
     intf=$1
     netw=$2
@@ -436,7 +436,7 @@ function limit_intf()
 
     $IPFW $inpipe config bw ${inbw[$i]}
     $IPFW $outpipe config bw ${outbw[$i]}
-    
+
     private="192.168.0.0/16,172.16.0.0/12,10.0.0.0/8"
 
     $IPFW add 450 set 0 skipto 900 all from any to $private out via $intf
@@ -450,16 +450,16 @@ function limit_intf()
     $IPFW queue $((100 + i)) config $outpipe weight 7 # high-priority
     $IPFW queue $((200 + i)) config $outpipe weight 5 # medium-priority
     $IPFW queue $((300 + i)) config $outpipe weight 1 # low-priority
-    
+
     # Assign outgoing empty/small ACK packets to the high-priority queue
     $IPFW add 600 set 0 queue $((100 + i)) \
         tcp from any to any out via $intf tcpflags ack iplen 0-80
-    
+
     # Assign outgoing UDP (DNS) and SSH traffic to the medium-priority queue
     $IPFW add 700 set 0 queue $((200 + i)) tcp from any to any 22,80,443,5900 \
 	out via $intf \{ tcpflags \!ack or iplen 81-65535 \}
     $IPFW add 710 set 0 queue $((200 + i)) udp from any to any 53,1194 out via $intf
-    
+
     # Assign all other outgoing traffic to the low-priority queue:
     $IPFW add 800 set 0 queue $((300 + i)) tcp from any to any not 22,80,443,5900 \
 	out via $intf \{ tcpflags \!ack or iplen 81-65535 \}
