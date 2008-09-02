@@ -4,7 +4,7 @@
 #
 # rc.firewall
 #
-#   version 1.64 (2008/04/23) by John Wiegley <johnw@newartisans.com>
+#   version 1.65 (2008/09/01) by John Wiegley <johnw@newartisans.com>
 #
 # This script takes a series of arguments describing the current network
 # interfaces and the networks behind them.  Basic usage is:
@@ -673,11 +673,15 @@ for (( index=0; index < intf_count; index++ )); do
 
 	# Allow outbound and inbound TCP connections to tcp_ports
 	$IPFW add $((3100 + index)) set 3 allow $logall \
-	    tcp from $netw to $netw $tcp_ports via $intf setup keep-state
+	    tcp from me to $netw $tcp_ports out via $intf setup keep-state
+	$IPFW add $((3110 + index)) set 3 allow $logall \
+	    tcp from $netw to me $tcp_ports in via $intf setup keep-state
 
 	# Allow outbound and inbound UDP connections to udp_ports
 	$IPFW add $((3200 + index)) set 3 allow $logall \
-	    udp from $netw to $netw $udp_ports via $intf keep-state
+	    udp from me to $netw $udp_ports out via $intf keep-state
+	$IPFW add $((3210 + index)) set 3 allow $logall \
+	    udp from $netw to me $udp_ports in via $intf keep-state
 
 	# Allow Rendezvous (Zeroconf) traffic
 	$IPFW add $((3300 + index)) set 3 allow $logall \
@@ -733,11 +737,15 @@ for (( index=0; index < intf_count; index++ )); do
 
 	# Allow outbound and inbound TCP connections to tcp_ports
 	$IPFW add $((4100 + index)) set 4 allow $logall \
-	    tcp from $netw to $netw $tcp_ports via $intf setup keep-state
+	    tcp from me to $netw $tcp_ports out via $intf setup keep-state
+	$IPFW add $((4110 + index)) set 4 allow $logall \
+	    tcp from $netw to me $tcp_ports in via $intf setup keep-state
 
 	# Allow outbound and inbound UDP connections to udp_ports
 	$IPFW add $((4200 + index)) set 4 allow $logall \
-	    udp from $netw to $netw $udp_ports via $intf keep-state
+	    udp from me to $netw $udp_ports out via $intf keep-state
+	$IPFW add $((4210 + index)) set 4 allow $logall \
+	    udp from $netw to me $udp_ports in via $intf keep-state
 
 	# Allow three types of broadcast traffic typically found in
 	# Windows and Apple enviroments
@@ -764,7 +772,9 @@ for (( index=0; index < intf_count; index++ )); do
 
 	# Allow all ICMP traffic within trusted networks (aka ping)
 	$IPFW add $((5100 + index)) set 5 allow $logall \
-	    icmp from $netw to $netw via $intf
+	    icmp from me to $netw out via $intf
+	$IPFW add $((5110 + index)) set 5 allow $logall \
+	    icmp from $netw to me in via $intf
     fi
 done
 
@@ -790,14 +800,23 @@ $IPFW add 5310 set 5 $unreach_host_prohib $logall tcp from any to any $tcp_ports
 #
 ##############################################################################
 
-# Allow certain types of ICMP packets on known interfaces, which might
-# be necessary for proper operation
-$IPFW add 6000 set 6 allow $logall icmp from any to any \
-    icmptypes 0,3,4,11,12,13,14 $via_all keep-state
+for (( index=0; index < intf_count; index++ )); do
+    netw=${networks[$index]}
+    intf=${interfaces[$index]}
 
-# Allow DHCP packets in and out, including broadcast
-$IPFW add 6100 set 6 allow $logall udp from any 67-68 to any 67-68 $via_all keep-state
+    # Allow certain types of ICMP packets on known interfaces, which might be
+    # necessary for proper operation
+    $IPFW add 6000 set 6 allow $logall icmp from me to $netw \
+	icmptypes 0,3,4,11,12,13,14 out via $intf keep-state
+    $IPFW add 6010 set 6 allow $logall icmp from $netw to me \
+	icmptypes 0,3,4,11,12,13,14 in via $intf keep-state
 
+    # Allow DHCP packets in and out, including broadcast
+    $IPFW add 6100 set 6 allow $logall udp \
+	from me 67-68 to $netw 67-68 out via $intf keep-state
+    $IPFW add 6110 set 6 allow $logall udp \
+	from $netw 67-68 to me 67-68 in via $intf keep-state
+done
 
 ##############################################################################
 #
@@ -934,18 +953,25 @@ udp_out_ports="1194"		                    # OpenVPN
 udp_out_ports="$udp_out_ports,53"		    # DNS
 udp_out_ports="$udp_out_ports,123"		    # NTP
 
-$IPFW add 11000 set 11 allow $logall \
-    tcp from me to any $tcp_out_ports out $via_all setup keep-state
+for (( index=0; index < intf_count; index++ )); do
+    netw=${networks[$index]}
+    intf=${interfaces[$index]}
 
-$IPFW add 11100 set 11 allow $logall udp \
-    from me to any $udp_out_ports out $via_all keep-state
+    $IPFW add 11000 set 11 allow $logall \
+	tcp from me to $netw $tcp_out_ports out via $intf setup keep-state
 
-$IPFW add 11200 set 11 allow $logall tcp from me to any out $via_all setup keep-state
-$IPFW add 11210 set 11 allow $logall ip from me to any out $via_all keep-state
+    $IPFW add 11100 set 11 allow $logall udp \
+	from me to $netw $udp_out_ports out via $intf keep-state
 
-if [[ $intf_count > 0 ]]; then
-    $IPFW set enable 11
-fi
+    $IPFW add 11200 set 11 allow $logall tcp \
+	from me to $netw out via $intf setup keep-state
+    $IPFW add 11210 set 11 allow $logall ip \
+	from me to $netw out via $intf keep-state
+
+    if [[ $intf_count > 0 ]]; then
+	$IPFW set enable 11
+    fi
+done
 
 
 ##############################################################################
