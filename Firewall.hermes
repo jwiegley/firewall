@@ -33,10 +33,10 @@ StartService ()
         echo "Home" > /var/run/firewall-type ;;
     *)
     	sh $fw_script --blackhole en1\{512Kbits/s,256Kbits/s\} \
-	    vmnet8@@192.168.36.0/24 \
-    	    tun0@@10.8.0.0/24 tun0 \
-    	    tap0\{500Kbits/s,250Kbits/s\}@@10.9.19.0/24 \
-    	    tap0\{500Kbits/s,250Kbits/s\}@@172.24.8.0/24
+	    vmnet8+win::192.168.36.0/24 \
+    	    tun0::10.8.0.0/24 tun0 \
+    	    tap0\{500Kbits/s,250Kbits/s\}+win::10.9.19.0/24 \
+    	    tap0\{500Kbits/s,250Kbits/s\}+win::172.24.8.0/24
 
     	ConsoleMessage "Remote Firewall started for Hermes"
 
