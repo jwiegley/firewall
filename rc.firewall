@@ -807,14 +807,14 @@ for (( index=0; index < intf_count; index++ )); do
 
     # Allow DHCP packets in and out, including broadcast.  Since we don't have
     # an address yet, we can't use "me" as a target here.
-    $IPFW add 6100 set 6 allow $logall udp \
+    $IPFW add 6000 set 6 allow $logall udp \
 	from any 67-68 to any 67-68 out via $intf keep-state
 
     # Allow certain types of ICMP packets on known interfaces, which might be
     # necessary for proper operation
-    $IPFW add 6000 set 6 allow $logall icmp from me to $netw \
+    $IPFW add 6100 set 6 allow $logall icmp from me to $netw \
 	icmptypes 0,3,4,11,12,13,14 out via $intf keep-state
-    $IPFW add 6010 set 6 allow $logall icmp from $netw to me \
+    $IPFW add 6110 set 6 allow $logall icmp from $netw to me \
 	icmptypes 0,3,4,11,12,13,14 in via $intf keep-state
 done
 
