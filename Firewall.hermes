@@ -22,22 +22,25 @@ StartService ()
 
     case "$gwmac" in
     0:1c:10:bc:b4:46)
-    	#sh $fw_script --blackhole \
-    	#    en1+mac::192.168.2.0/24 en1\{1450Kbits/s,950Kbits/s\} \
-	#    vmnet8+win::192.168.36.0/24 \
-    	#    tap0\{1400Kbits/s,900Kbits/s\}+win::10.9.19.0/24 \
-    	#    tap0\{1400Kbits/s,900Kbits/s\}+win::172.24.8.0/24
+    	sh $fw_script --blackhole --trusted-tcp 6900 \
+    	    en0+mac::192.168.3.0/24 \
+    	    en1+mac::192.168.2.0/24 en1\{0,0\} \
+	    vmnet8+win::192.168.36.0/24 \
+    	    tun0\{0,0\}::10.0.0.0/16 \
+    	    tap0\{0,0\}+win::10.9.19.0/24 \
+    	    tap0\{0,0\}+win::172.24.8.0/24
 
     	ConsoleMessage "Home Firewall started for Hermes"
 
         echo "Home" > /var/run/firewall-type ;;
     *)
-    	sh $fw_script --blackhole en0 en1\{512Kbits/s,256Kbits/s\} \
+    	sh $fw_script --blackhole --trusted-tcp 8140 \
+	    en0 en1\{512Kbits/s,256Kbits/s\} \
 	    vmnet8+win::192.168.36.0/24 \
     	    tun0::10.8.0.0/24 tun0 \
     	    tun1::10.9.0.0/24 tun1 \
     	    tap0\{500Kbits/s,250Kbits/s\}+win::10.9.19.0/24 \
-    	    tap0\{500Kbits/s,250Kbits/s\}+win::172.24.8.0/24
+    	    tap0\{500Kbits/s,250Kbits/s\}+win::172.24.8.0/24 tap0
 
     	ConsoleMessage "Remote Firewall started for Hermes"
 
