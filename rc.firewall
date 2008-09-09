@@ -4,7 +4,7 @@
 #
 # rc.firewall
 #
-#   version 1.66 (2008/09/03) by John Wiegley <johnw@newartisans.com>
+#   version 1.67 (2008/09/08) by John Wiegley <johnw@newartisans.com>
 #
 # This script takes a series of arguments describing the current network
 # interfaces and the networks behind them.  Basic usage is:
@@ -28,14 +28,14 @@
 # spoofing and illegal addresses.  If two colons are used, the network is
 # considered "trusted" and additional traffic, such as Rendezvous, is allowed.
 #
-# Examples:
+# INTERFACE EXAMPLES
 #
 #   en1{0,0}                      en1 (Airport) accesses the Internet
 #                                 and uses priority packet queueing,
 #                                 but without rate limiting
 #   en0:192.168.0.0/24            Local network on en0: 192.168.0.x
 #   en0::192.168.0.0/16           Trusted network on en0: 192.168.x.x
-#   en0::192.168.0.0:255.255.0.0  Same as the one immediately above
+#   en0::192.168.0.0:255.255.0.0  Same as previous
 #   en0+mac::192.168.0.0/16       Trusted Mac network on en0
 #   en0+win::192.168.0.0/16       Trusted Windows network on en0
 #   en0+mac+win::192.168.0.0/16   Trusted mixed network on en0
@@ -46,12 +46,12 @@
 # specific interfaces/networks first*.  This means that if you access both
 # 192.168.0.0/24 and the Internet over en1, use this:
 #
-#   rc.firewall en1::192.168.0.0/24 'en1{0,0}'
+#   rc.firewall en1::192.168.0.0/24 en1\{0,0\}
 #
 # The string {0,0} (escaped for the shell) specifies inbound and outbound
 # bandwidth limits for public interfaces.  A pair of zeros means bandwith
-# isn't limited, but it IS shaped -- under the assumption that resources
-# probably ARE limited, you just don't want to specify an artifical number
+# isn't limited, but it *is* shaped -- under the assumption that resources
+# probably *are* limited, you just don't want to specify an artifical number
 # right now.  If the "{IN,OUT}" isn't specified for an interface, it means
 # neither limiting nor shaping is performed.
 #
@@ -59,21 +59,54 @@
 # interface, not the network; to compensate, traffic bound for internal
 # networks is never limited or shaped.
 
+# RECIPES
 #
-# OPTIONS can be one or more of the following:
+# 1. You're going to be gaming on a mixed local LAN tonight over Ethernet, but
+#    your Internet access will be via Wireless:
+#
+#    rc.firewall --gaming en0\{0,0\}+mac+win::192.168.x.0/24 en1
+#
+# 2. You're at a local coffee shop, using wireless, and you'd like to be a
+#    good citizen (i.e., not saturate their network with your downloads), so
+#    you limit voluntarily rate-limit yourself to 512 Kbits down and 128 Kbits
+#    up:
+#
+#    rc.firewall --stealth --blackhole en1\{512Kbits/s,128Kbits/s\}
+#
+# 3. You're at home, where you connect by wireless and have a Mac network,
+#    plus you leave your SSH port open:
+#
+#    rc.firewall --trusted-tcp 22 en1+mac::192.168.x.0/24 en1\{0,0\}
+#
+# 4. You're running your secure little Mac at the cafe, same as #2, but you
+#    also have a Windows box running in VMware that you'd like to trust, and
+#    you have a VPN connection to your Windows-based office.  Lastly, you
+#    sometimes route *all* traffic through the VPN, though not always:
+#
+#    rc.firewall --stealth --blackhole \
+#		 en1\{512Kbits/s,128Kbits/s\} \
+#		 vmnet8+win::192.168.36.0/24 \
+#		 tap0\{500Kbits/s,118Kbits/s\}+win::10.0.0.0/8 \
+#		 tap0\{500Kbits/s,118Kbits/s\}
+
+# OPTIONS
 #
 # --debug
-#   Show what commands would have been executed to setup the firewall.
-#   No system changes are made.
+#   Show what commands would have been executed to setup the firewall.  No
+#   system changes are made.
+#
+# --verbose
+#   Log suspicious packets.  Note that on some network, this can result in
+#   rather large log files.
 #
 # --log-all
-#   Log every rejected packet, not just the suspicious ones.  Note: If
-#   you're restarting the firewall, you'll initially reject a lot of
-#   established packets from connections made before the restart.
+#   Log every rejected packet, not just the suspicious ones.  Note: If you're
+#   restarting the firewall, you'll initially reject a lot of established
+#   packets from connections made before the restart.
 #
 # --stealth
-#   Try to be as stealthy as possible.  Ordinarily, this script
-#   responds to failed connection attempts in the following manner:
+#   Try to be as stealthy as possible.  Ordinarily, this script responds to
+#   failed connection attempts in the following manner:
 #
 #     port 113                      TCP RESET
 #     broadcasts                    ICMP host-prohib
@@ -81,34 +114,41 @@
 #     old established connections   TCP RESET
 #     NetBIOS/Rendezvous traffic    silently drop packet
 #
-#   Also, while all "normal" outbound traffic is silently allowed,
-#   anything out of the ordinary is logged.
+#   Also, while all "normal" outbound traffic is silently allowed, anything
+#   out of the ordinary is logged (if --verbose is used).
 #
-#   When --stealth mode is on, this script will drop all inbound
-#   packets, and also all suspicious outbound packets.  It tries to
-#   make your machine appear as far under the radar as possible on
-#   an open network.
+#   When --stealth mode is on, this script drops all inbound packets silently,
+#   and also all suspicious outbound packets.  It tries to make your machine
+#   appear as far under the radar as possible on an open network.
 #
-#   However, do realize that being entirely stealthy is not
-#   possible.  Anyone on the same local network as you will be able
-#   to see your ARP packets flying around, and will know that you are
-#   there and what your MAC address is.  Also, by attempting to scan
-#   you, they will know that you're trying to be stealthy.  In fact,
-#   --stealth mode is really only effective against the most casual
-#   of observers, and not a determined analyst.
+#   However, do realize that being entirely stealthy is not possible.  Anyone
+#   on the same local network as you will be able to see your ARP packets
+#   flying around, and will know you are there and what your MAC address is.
+#   Also, by attempting to scan you, they will know you're trying to be
+#   stealthy.  In fact, --stealth mode is really only effective against the
+#   most casual of observers.
 #
 # --blackhole
-#   If used, a tcp/udp blackhole is configured to help block stealth
-#   scanning.  Note however that this has caused known slowdowns in
-#   services like Samba (smbfs).
+#   If used, a tcp/udp blackhole is configured to help block stealth scanning.
+#   Note however that this has caused known slowdowns in services like Samba
+#   (smbfs).
+#
+# --gaming
+#   Indicates that you intend to use the machine primarily for gaming, where
+#   latency is more important than throughput.  Kernel variables are tuned
+#   accordingly.  You should also use priority queuing (suffix {0,0} to the
+#   interface) so that small ACK packets get out ASAP.
 #
 # --router INTF1,INTF2:NET
-#   This machine acts as a router between INTF1 and INTF2 in network
-#   NET.  INTF1 specifies the target interface, so if you wanted to
-#   route traffic from en1 (local clients connected to your Airport
-#   network) over en0 (cable modem connection to the Internet), you
-#   would use: --router en0,en1; which you might read as "route
-#   traffic over en0 from en1".
+#   This machine acts as a router between INTF1 and INTF2 for network NET.
+#   INTF1 specifies the target interface, so if you wanted to route traffic
+#   from en1 (local clients connected to your Airport network) over en0 (cable
+#   modem connection to the Internet), you would use:
+#
+#       rc.firewall --router en0,en1:192.168.10.0/24
+#
+#   This might read as "route traffic over Ethernet (en0) coming from the
+#   Wireless (en1) subnetwork (192.168.10.0/24)".
 #
 # --tcp PORT[,PORT...]
 # --udp PORT[,PORT...]
@@ -116,27 +156,13 @@
 #
 # --local-tcp PORT[,PORT...]
 # --local-udp PORT[,PORT...]
-#   Make the given inbound PORTs accessible to local networks (i.e.,
-#   just not the Internet).
+#   Make the given inbound PORTs accessible to local networks (i.e., not the
+#   Internet).
 #
 # --trusted-tcp PORT[,PORT...]
 # --trusted-udp PORT[,PORT...]
 #   Make the given inbound PORTs accessible to trusted networks only.
 
-#
-# EXAMPLE
-#
-# en1 (Airport) is connected to the Internet; there is also a local network
-# visible on en1; there is a trusted Mac network on en0; and I'm connected
-# via OpenVPN (over tap0) to a trusted Windows network:
-#
-#   rc.firewall			\
-#       en1:192.168.0.0/24	\
-#       'en1{0,0}'		\
-#       en0+mac::192.168.2.0/24 \
-#       tap0+win::10.9.19.0/24
-
-#
 # NOTES
 #
 # A word about a few of the things this script cannot do, owing to
@@ -144,7 +170,7 @@
 #
 # * You cannot filter incoming packets based on the MAC address of the source.
 #   This is because the necessary support is not compiled into the OS X
-#   kernel, and not because ipfw doesn't support it.
+#   kernel, not because ipfw doesn't support it.
 #
 # * You cannot take action based on counters, like shutting off ECHO REQUEST
 #   packets from a certain host once they exceed a certain number within a
@@ -153,13 +179,13 @@
 # * Although you can shape traffic by directing it along specific pipes or
 #   queues, you cannot manipulate traffic as it passes down the chain.  Doing
 #   this requires divert'ing the traffic to a user-space daemon, which
-#   modifies the packets and passes them on (google for 'throttled').
-#   iptables on Linux can do this sort of thing very easily; it's a shame ipfw
-#   cannot.
+#   modifies the packets and passes them on (google for 'throttled' as an
+#   excellent example).  iptables on Linux can do this sort of thing very
+#   easily, it's a shame ipfw cannot.
 #
 # * You can't match a packet based on its IP fragment offset, only on the
-#   existence of fragmentation or not.  And ipfw always drops TCP packets with
-#   a fragment offset of 1.
+#   existence of fragmentation or not.  Also, ipfw always drops TCP packets
+#   with a fragment offset of 1.
 #
 ##############################################################################
 
@@ -173,12 +199,14 @@
 IPFW="/sbin/ipfw -q"
 
 debug=false
+gaming=false
 blackhole=false
 router=false
 this="me"
 logall=""
 
 stealth=false
+verbose=false
 tcp_reset="reset"
 unreach_host="unreach host"	# aka, reject
 unreach_host_prohib="unreach host-prohib"
@@ -197,6 +225,14 @@ while [[ -n "$1" ]] && (echo $1 | grep -q -e ^--); do
 	shift 1
 	debug=true
 	IPFW="echo ipfw" ;;
+
+    --gaming)
+	shift 1
+	gaming=true ;;
+
+    --verbose)
+	shift 1
+	verbose=true ;;
 
     --log-all)
 	shift 1
@@ -482,25 +518,17 @@ $IPFW -f pipe flush
 
 # Log all rejected packets, which are always "suspect"
 if [[ $debug == false ]]; then
-    #sysctl -w net.inet.ip.fw.verbose=1
-    sysctl -w net.inet.ip.fw.verbose=0
+    if [[ $verbose == true ]]; then
+	sysctl -w net.inet.ip.fw.verbose=1
+    else
+	sysctl -w net.inet.ip.fw.verbose=0
+    fi
 
     # Make sure packets get reinjected
     sysctl -w net.inet.ip.fw.one_pass=0
     # Check that packets are appropriate to their interface
     sysctl -w net.inet.ip.check_interface=1
-    # Up to 65535 for faster downloads when you have decent
-    # latency-free bandwidth (ie, _not_ DSL which dies badly as it
-    # saturates)
-    sysctl -w net.inet.tcp.sendspace=16000
-    sysctl -w net.inet.tcp.recvspace=16000
-    sysctl -w net.inet.udp.recvspace=42080
-    sysctl -w net.inet.raw.recvspace=8192
-    sysctl -w net.local.dgram.maxdgram=4196
-    # Other network buffering
-    sysctl -w net.local.stream.recvspace=16000
-    sysctl -w net.local.stream.sendspace=16000
-    sysctl -w net.local.dgram.recvspace=8000
+
     # Turn on RFC1323 TCP high speed optimization.
     # NOTE: This can be a security risk (DoS attack)
     sysctl -w net.inet.tcp.rfc1323=1
@@ -517,8 +545,6 @@ if [[ $debug == false ]]; then
     sysctl -w net.inet.icmp.bmcastecho=0
     # Stop other broadcast probes
     sysctl -w net.inet.icmp.maskrepl=0
-    # TCP delayed ack on
-    sysctl -w net.inet.tcp.delayed_ack=1
     # Turn on strong TCP sequencing
     sysctl -w net.inet.tcp.strict_rfc1948=1
     # Socket queue defense against SYN attacks
@@ -527,6 +553,39 @@ if [[ $debug == false ]]; then
     sysctl -w kern.ipc.maxsockbuf=523288
     # ARP cleanup
     sysctl -w net.link.ether.inet.max_age=1200
+
+    # Increase buffers for faster downloads when you have very
+    # high-speed, latency-free bandwidth (ie, _not_ DSL which dies badly
+    # as it saturates)
+    if [[ $gaming == true ]]; then
+	sysctl -w net.inet.tcp.sendspace=16383
+	sysctl -w net.inet.tcp.recvspace=16383
+	sysctl -w net.inet.udp.recvspace=42080
+	sysctl -w net.inet.raw.recvspace=8192
+	sysctl -w net.local.dgram.maxdgram=4196
+
+	# Other network buffering
+	sysctl -w net.local.stream.recvspace=16383
+	sysctl -w net.local.stream.sendspace=16383
+	sysctl -w net.local.dgram.recvspace=8192
+
+	# TCP delayed ack off, better latency
+	sysctl -w net.inet.tcp.delayed_ack=0
+    else
+	sysctl -w net.inet.tcp.sendspace=32767
+	sysctl -w net.inet.tcp.recvspace=32767
+	sysctl -w net.inet.udp.recvspace=65535
+	sysctl -w net.inet.raw.recvspace=16384
+	sysctl -w net.local.dgram.maxdgram=8192
+
+	# Other network buffering
+	sysctl -w net.local.stream.recvspace=32767
+	sysctl -w net.local.stream.sendspace=32767
+	sysctl -w net.local.dgram.recvspace=16384
+
+	# TCP delayed ack on, better throughput
+	sysctl -w net.inet.tcp.delayed_ack=1
+    fi
 
     # Create a blackhole to avoid stealth port scans
     if [[ $blackhole == true ]]; then
