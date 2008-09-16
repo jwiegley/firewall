@@ -22,7 +22,7 @@ StartService ()
 
     case "$gwmac" in
     0:1c:10:bc:b4:46)
-    	sh $fw_script --blackhole --trusted-tcp 6900 \
+    	sh $fw_script --blackhole --trusted-tcp 6900,44176,44177 \
     	    en0+mac::192.168.3.0/24 \
     	    en1+mac::192.168.2.0/24 en1\{0,0\} \
 	    vmnet8+win::192.168.36.0/24 \
