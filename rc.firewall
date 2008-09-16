@@ -4,7 +4,7 @@
 #
 # rc.firewall
 #
-#   version 1.67 (2008/09/08) by John Wiegley <johnw@newartisans.com>
+#   version 1.68 (2008/09/09) by John Wiegley <johnw@newartisans.com>
 #
 # This script takes a series of arguments describing the current network
 # interfaces and the networks behind them.  Basic usage is:
@@ -710,13 +710,13 @@ $IPFW add 2110 set 2 $tcp_reset $logall tcp from any to any established
 
 ##############################################################################
 #
-# Set 3: Allow Rendezvous and AFP for Apple networks
+# Set 3: Allow Rendezvous/Bonjour and AFP for Apple networks
 #
 ##############################################################################
 
 # TCP  548        Apple    AFP
 #      5009       Apple    Airport Express Admin
-#      5009       Apple    VNC (screen sharing)
+#      5900       Apple    VNC (screen sharing)
 
 tcp_ports=548,5009,5900
 
@@ -743,7 +743,7 @@ for (( index=0; index < intf_count; index++ )); do
 	$IPFW add $((3210 + index)) set 3 allow $logall \
 	    udp from $netw to me $udp_ports in via $intf keep-state
 
-	# Allow Rendezvous (Zeroconf) traffic
+	# Allow Rendezvous/Bonjour (Zeroconf) traffic
 	$IPFW add $((3300 + index)) set 3 allow $logall \
 	    udp from $netw to any 5353 via $intf keep-state
 
@@ -763,13 +763,12 @@ done
 # Load or unload the Apple Multicast daemon based on whether we're
 # using Rendezvous at all; no need to broadcast if we're not, since
 # the packets won't even be let out
-if [[ $allowed == false && $debug == false ]]; then
-    launchctl unload \
-	/System/Library/LaunchDaemons/com.apple.mDNSResponder.plist 2> /dev/null
-elif [[ $allowed == true && $debug == false ]]; then
-    launchctl load -w /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
+if [[ $debug == false ]]; then
+    launchctl unload /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist 2> /dev/null
+    if [[ $allowed == true ]]; then
+	launchctl load -w /System/Library/LaunchDaemons/com.apple.mDNSResponder.plist
+    fi
 fi
-
 
 ##############################################################################
 #
